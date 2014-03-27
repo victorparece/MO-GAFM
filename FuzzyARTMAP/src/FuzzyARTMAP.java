@@ -16,7 +16,6 @@ public class FuzzyARTMAP
         this.baselineVigilenceParam = baselineVigilenceParam;
 
         boolean weightsUpdated = true;
-        double vigilanceParam = baselineVigilenceParam;
 
         //Loop until the weights are not updated
         while (weightsUpdated)
@@ -26,6 +25,8 @@ public class FuzzyARTMAP
             //Loop for input/output pairs
             for (Map.Entry<Double[], Integer> input : inputPatterns.entrySet())
             {
+                double vigilanceParam = baselineVigilenceParam;
+
                 //Compute activation for committed nodes
                 Map<Double[], Double> sortedActivationMap = GetActivation(input);
 
@@ -46,16 +47,22 @@ public class FuzzyARTMAP
                             {
                                 Double[] newNode = fuzzyMin(input.getKey(), node.getKey());
 
-                                nodes.remove(node);
-                                nodes.put(newNode, input.getValue());
+                                //New node is not already in nodes
+                                if (!ContainsKey(newNode))
+                                {
+                                    nodes.remove(node.getKey());
+                                    nodes.put(newNode, input.getValue());
 
-                                weightsUpdated = true;
+                                    weightsUpdated = true;
+                                }
+                                //New node is already in nodes, do nothing
+
                                 break;
                             }
                             //Label test failed, increase vigilance
                             else
                             {
-                                vigilance = sum(fuzzyMin(input.getKey(), node.getKey()))/sum(input.getKey());
+                                vigilanceParam = sum(fuzzyMin(input.getKey(), node.getKey()))/sum(input.getKey());
                             }
                         }
                     }
@@ -105,6 +112,23 @@ public class FuzzyARTMAP
             sortedActivationMap.put(entry.getKey(), entry.getValue());
 
         return sortedActivationMap;
+    }
+
+    /**
+     * Returns true if the map contains the key (this method uses equals for comparison)
+     */
+    public boolean ContainsKey(Double[] comparisonKey)
+    {
+        for (Double[] key : nodes.keySet())
+        {
+            boolean match = true;
+            for (int i = 0; i < key.length; i++)
+                if (comparisonKey[i].compareTo(key[i]) != 0)
+                    match = false;
+
+            if (match) return true;
+        }
+        return false;
     }
 
     /**
@@ -185,5 +209,65 @@ public class FuzzyARTMAP
             a[i] = 1 - a[i];
 
         return result;
+    }
+
+    /**
+     * Compute the error rate of the Fuzzy ARTMAP using the validation set
+     * @param validationSet
+     * @return
+     */
+    public double Validate(Map<Double[], Integer> validationSet)
+    {
+        double correctCount = 0;
+        Map<Double[], Integer> result = new LinkedHashMap<Double[], Integer>();
+
+        //Loop for input/output pairs
+        for (Map.Entry<Double[], Integer> input : validationSet.entrySet())
+        {
+            double vigilanceParam = baselineVigilenceParam;
+
+            //Compute activation for committed nodes
+            Map<Double[], Double> sortedActivationMap = GetActivation(input);
+
+            //Select node with highest activation and do vigilance tests
+            for (Map.Entry<Double[], Double> node : sortedActivationMap.entrySet())
+            {
+                //Compute vigilance
+                double vigilance = sum(fuzzyMin(input.getKey(), node.getKey()))/sum(input.getKey());
+
+                //Committed Node
+                if (nodes.containsKey(node.getKey()))
+                {
+                    //Vigilance test
+                    if (vigilance >= vigilanceParam)
+                        result.put(input.getKey(), nodes.get(node.getKey()));
+                }
+                //Uncommitted Node
+                else
+                {
+                    //Unknown
+                    result.put(input.getKey(), -1);
+                    break;
+                }
+
+                //Disqualify node
+                node.setValue(-1.0);
+            }
+
+            //Increment number of correct response counter if validation matches computed
+            if (result.get(input).equals(validationSet.get(input)))
+                correctCount += 1;
+        }
+
+        return correctCount/validationSet.size();
+    }
+
+    /**
+     * Returns the number of nodes in the category representation layer of the Fuzzy ARTMAP
+     * @return
+     */
+    public int Size()
+    {
+        return nodes.size();
     }
 }
