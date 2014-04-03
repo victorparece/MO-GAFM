@@ -1,14 +1,17 @@
+import java.awt.*;
 import java.util.*;
 
 /**
  * Created by vic on 3/26/14.
  */
-public class Chromosome
+public class Chromosome implements Comparable<Chromosome>
 {
     private FuzzyARTMAP fartmap;
 
     private double errorRate;
     private int complexity;
+    private int strengthValue;
+    private double fitness;
 
     /**
      * Constructor
@@ -29,13 +32,78 @@ public class Chromosome
     }
 
     /**
-     * Compute fitness for individual (error rate and complexity)
+     * Compute objective values for individual (error rate and complexity)
      * @param validationSet
      */
-    public void ComputeFitness(Map<Double[], Integer> validationSet)
+    public void ComputeObjectiveValues(Map<Double[], Integer> validationSet)
     {
         errorRate = fartmap.Validate(validationSet);
         complexity = fartmap.Size();
     }
 
+    public double GetErrorRate()
+    {
+        return errorRate;
+    }
+
+    public int GetComplexity()
+    {
+        return complexity;
+    }
+
+    public int GetStrengthValue()
+    {
+        return strengthValue;
+    }
+
+    public double GetFitness()
+    {
+        return fitness;
+    }
+
+    public boolean Dominates(Chromosome b)
+    {
+        return GetComplexity() < b.GetComplexity() && GetErrorRate() < b.GetErrorRate();
+    }
+
+    /**
+     * Compute the strength value for this chromosome (Number of solutions this chromosome dominates)
+     * @param chromos
+     * @return
+     */
+    public void ComputeStrengthValue(ArrayList<Chromosome> chromos)
+    {
+        strengthValue = 0;
+        for (Chromosome chromo : chromos)
+            if (this.Dominates(chromo))
+                strengthValue++;
+    }
+
+    public void ComputeFitness(ArrayList<Chromosome> chromos)
+    {
+        double rawFitness = 0;
+        int k = (int)Math.round(Math.sqrt(chromos.size()));
+        ArrayList<Double> chromoDistances = new ArrayList<Double>();
+
+        for (Chromosome chromo : chromos)
+        {
+            //Update raw fitness
+            if (chromo.Dominates(this))
+                rawFitness += chromo.GetStrengthValue();
+
+            //Compute distance in objective space
+            chromoDistances.add(Point.distance(errorRate, complexity, chromo.GetErrorRate(), chromo.GetComplexity()));
+        }
+
+        //Sort //TODO: Make sure this is ascending order
+        Collections.sort(chromoDistances);
+
+        fitness = rawFitness + 1/(chromoDistances.get(k) + 2);
+    }
+
+    @Override
+    public int compareTo(Chromosome b)
+    {
+        return new Double(fitness).compareTo(b.GetFitness());
+    }
 }

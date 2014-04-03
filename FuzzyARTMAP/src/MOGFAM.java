@@ -1,3 +1,4 @@
+import java.awt.*;
 import java.util.*;
 
 /**
@@ -37,22 +38,78 @@ public class MOGFAM
         for (int i = 0; i < POPULATION_SIZE; i++)
             P.add(new Chromosome(trainingSet, random));
 
-        int lastUpdateGeneration; //Last generation A was updated
+        int lastUpdateGeneration = 0; //Last generation A was updated
 
         //Loop for generations
         for (int generation = 0; generation < TOTAL_GENERATIONS; generation++)
         {
             //Evaluate fitness according to objective function
             for (Chromosome individual : P)
-                individual.ComputeFitness(validationSet);
+                individual.ComputeObjectiveValues(validationSet);
 
             //Update A with solutions in P that are nondominated by solutions in A
-            //TODO
-            lastUpdateGeneration = generation;
+            if (A.size() == 0)
+                A = (ArrayList<Chromosome>)P.clone();
+            //ArrayList<Chromosome> newA = new ArrayList<Chromosome>();
+            for (Chromosome chromoA : A) //TODO: I don't think this will work as is
+            {
+                for (Chromosome chromoP : P)
+                {
+                    //ChromoP dominates ChromoA
+                    if (chromoP.Dominates(chromoA))
+                    {
+                        //Remove ChromoA from A and add ChromoP to A
+                        A.remove(chromoA);
+                        A.add(chromoP);
+                        P.remove(chromoP);
+                        lastUpdateGeneration = generation;
+                        break;
+                    }
+                }
+            }
+
+            //Select parent chromosomes
+            ArrayList<Chromosome> newP = new ArrayList<Chromosome>();
+            ArrayList<Chromosome> PA = new ArrayList<Chromosome>();
+            PA.addAll(P);
+            PA.addAll(A);
+
+            //Compute the strength value for each chromosome
+            for (Chromosome chromo : PA)
+                chromo.ComputeStrengthValue(PA);
+
+            //Compute the fitness for each chromosome
+            for (Chromosome chromo : PA)
+                chromo.ComputeFitness(PA);
+
+            //Select parents
+            for (int parent = 0; parent < POPULATION_SIZE; parent++)
+            {
+                Chromosome parentA = GetChromosome(PA, random);
+                Chromosome parentB = GetChromosome(PA, random);
+
+                //Crossover
+
+                //Mutation
+
+            }
 
             //Stop if A is not updated for 10 consecutive generations
             if (generation - lastUpdateGeneration > 10)
                 break;
         }
+    }
+
+    private static Chromosome GetChromosome(ArrayList<Chromosome> chromosomes, Random random)
+    {
+        //Randomly select two chromosomes
+        Chromosome randomChromoA = chromosomes.get(random.nextInt(chromosomes.size()));
+        Chromosome randomChromoB = chromosomes.get(random.nextInt(chromosomes.size()));
+
+        //Select chromosome with the smallest fitness
+        if (randomChromoA.GetFitness() < randomChromoB.GetFitness())
+            return randomChromoA;
+
+        return randomChromoB;
     }
 }
