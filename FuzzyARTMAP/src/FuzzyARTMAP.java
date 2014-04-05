@@ -8,7 +8,7 @@ public class FuzzyARTMAP
     private double baselineVigilenceParam;
     private double choiceParam;
 
-    private Map<Double[], Integer> nodes = new LinkedHashMap<Double[], Integer>();
+    private ArrayList<Node> nodes = new ArrayList<Node>();
 
     public FuzzyARTMAP(Map<Double[], Integer> inputPatterns, double choiceParam, double baselineVigilenceParam)
     {
@@ -28,30 +28,30 @@ public class FuzzyARTMAP
                 double vigilanceParam = baselineVigilenceParam;
 
                 //Compute activation for committed nodes
-                Map<Double[], Double> sortedActivationMap = GetActivation(input);
+                ArrayList<Node> sortedActivationList = GetActivation(input);
 
                 //Select node with highest activation and do vigilance/label tests
                 Double[] selectedNode = null;
-                for (Map.Entry<Double[], Double> node : sortedActivationMap.entrySet())
+                for (Node node : sortedActivationList)
                 {
                     //Compute vigilance
-                    double vigilance = sum(fuzzyMin(input.getKey(), node.getKey()))/sum(input.getKey());
+                    double vigilance = FuzzyMath.sum(FuzzyMath.fuzzyMin(input.getKey(), node.GetPattern()))/FuzzyMath.sum(input.getKey());
 
                     //Committed Node
-                    if (nodes.containsKey(node.getKey()))
+                    if (nodes.contains(node))
                     {
                         //Vigilance and Label tests
                         if (vigilance >= vigilanceParam)
                         {
-                            if (input.getValue().equals(nodes.get(node.getKey())))
+                            if (input.getValue().equals(node.GetLabel()))
                             {
-                                Double[] newNode = fuzzyMin(input.getKey(), node.getKey());
+                                Node newNode = new Node(FuzzyMath.fuzzyMin(input.getKey(), node.GetPattern()), node.GetLabel());
 
                                 //New node is not already in nodes
-                                if (!ContainsKey(newNode))
+                                if (!nodes.contains(newNode))//!ContainsKey(newNode))
                                 {
-                                    nodes.remove(node.getKey());
-                                    nodes.put(newNode, input.getValue());
+                                    nodes.remove(node);
+                                    nodes.add(newNode);
 
                                     weightsUpdated = true;
                                 }
@@ -62,24 +62,40 @@ public class FuzzyARTMAP
                             //Label test failed, increase vigilance
                             else
                             {
-                                vigilanceParam = sum(fuzzyMin(input.getKey(), node.getKey()))/sum(input.getKey());
+                                vigilanceParam = FuzzyMath.sum(FuzzyMath.fuzzyMin(input.getKey(), node.GetPattern()))/FuzzyMath.sum(input.getKey());
                             }
                         }
                     }
                     //Uncommitted Node
                     else
                     {
-                        nodes.put(input.getKey(), input.getValue());
+                        nodes.add(new Node(input.getKey(), input.getValue()));
 
                         weightsUpdated = true;
                         break;
                     }
 
                     //Disqualify node
-                    node.setValue(-1.0);
+                    node.SetActivation(-1.0);
                 }
             }
         }
+    }
+
+    public FuzzyARTMAP(FuzzyARTMAP fartmap)
+    {
+        baselineVigilenceParam = fartmap.GetBaselineVigilanceParam();
+        choiceParam = fartmap.GetChoiceParam();
+
+        for (Node node : fartmap.GetNodes())
+            nodes.add(new Node(node));
+    }
+
+    public FuzzyARTMAP(ArrayList<Node> nodes, double choiceParam, double baselineVigilenceParam)
+    {
+        this.choiceParam = choiceParam;
+        this.baselineVigilenceParam = baselineVigilenceParam;
+        this.nodes = nodes;
     }
 
     /**
@@ -87,48 +103,26 @@ public class FuzzyARTMAP
      * @param input
      * @return
      */
-    public Map<Double[], Double> GetActivation(Map.Entry<Double[], Integer> input)
+    public ArrayList<Node> GetActivation(Map.Entry<Double[], Integer> input)
     {
-        Map<Double[], Double> activationMap = new LinkedHashMap<Double[], Double>();
+        ArrayList<Node> activationList = new ArrayList<Node>();
 
         //Compute activation for uncommitted nodes
-        for (Double[] node : nodes.keySet())
+        for (Node node : nodes)
         {
-            double activation = sum(fuzzyMin(input.getKey(), node))/(choiceParam + sum(node));
-            activationMap.put(node, activation);
+            node.ComputeActivation(input, choiceParam);
+            activationList.add(node);
         }
 
         //Add uncommitted node
-        activationMap.put(input.getKey(), sum(input.getKey())/(choiceParam + sum(GetAllOnes(input.getKey().length))));
+        Node uncommittedNode = new Node(input.getKey(), input.getValue());
+        uncommittedNode.SetActivation(FuzzyMath.sum(input.getKey())/(choiceParam + FuzzyMath.sum(GetAllOnes(input.getKey().length))));
+        //uncommittedNode.ComputeActivation(input, choiceParam);
+        activationList.add(uncommittedNode);
 
-        List<Map.Entry<Double[], Double>> entries = new ArrayList<Map.Entry<Double[], Double>>(activationMap.entrySet());
-        Collections.sort(entries, new Comparator<Map.Entry<Double[], Double>>() {
-            public int compare(Map.Entry<Double[], Double> a, Map.Entry<Double[], Double> b){
-                return b.getValue().compareTo(a.getValue());
-            }
-        });
-        Map<Double[], Double> sortedActivationMap = new LinkedHashMap<Double[], Double>();
-        for (Map.Entry<Double[], Double> entry : entries)
-            sortedActivationMap.put(entry.getKey(), entry.getValue());
+        Collections.sort(activationList);
 
-        return sortedActivationMap;
-    }
-
-    /**
-     * Returns true if the map contains the key (this method uses equals for comparison)
-     */
-    public boolean ContainsKey(Double[] comparisonKey)
-    {
-        for (Double[] key : nodes.keySet())
-        {
-            boolean match = true;
-            for (int i = 0; i < key.length; i++)
-                if (comparisonKey[i].compareTo(key[i]) != 0)
-                    match = false;
-
-            if (match) return true;
-        }
-        return false;
+        return activationList;
     }
 
     /**
@@ -160,56 +154,7 @@ public class FuzzyARTMAP
         FuzzyARTMAP fartmap = new FuzzyARTMAP(input, 0.01, 0.7);
     }
 
-    /**
-     * Compute the fuzzy mean of two arrays
-     * @param a
-     * @param b
-     * @return
-     */
-    private Double[] fuzzyMin(Double[] a, Double[] b)
-    {
-        int maxLength = Math.max(a.length, b.length);
-        Double[] result = new Double[maxLength];
 
-        for (int i = 0; i < maxLength; i++)
-            if (i <= a.length && i <= b.length)
-                result[i] = Math.min(a[i], b[i]);
-            else if (i > a.length)
-                result[i] = b[i];
-            else if (i > b.length)
-                result[i] = a[i];
-
-        return result;
-    }
-
-    /**
-     * Sums all of the elements of an array
-     * @param a
-     * @return
-     */
-    private double sum(Double[] a)
-    {
-        double result = 0;
-
-        for (int i = 0; i < a.length; i++)
-            result += a[i];
-
-        return result;
-    }
-
-    /**
-     * Gets the complement of each element in the array
-     * @param a
-     * @return
-     */
-    private Double[] complement(Double[] a)
-    {
-        Double[] result = new Double[a.length];
-        for (int i = 0; i < a.length; i++)
-            a[i] = 1 - a[i];
-
-        return result;
-    }
 
     /**
      * Compute the error rate of the Fuzzy ARTMAP using the validation set
@@ -218,8 +163,10 @@ public class FuzzyARTMAP
      */
     public double Validate(Map<Double[], Integer> validationSet)
     {
-        double correctCount = 0;
-        Map<Double[], Integer> result = new LinkedHashMap<Double[], Integer>();
+        int correctCount = 0;
+
+        for (Node node : nodes)
+            node.Reset();
 
         //Loop for input/output pairs
         for (Map.Entry<Double[], Integer> input : validationSet.entrySet())
@@ -227,39 +174,71 @@ public class FuzzyARTMAP
             double vigilanceParam = baselineVigilenceParam;
 
             //Compute activation for committed nodes
-            Map<Double[], Double> sortedActivationMap = GetActivation(input);
+            ArrayList<Node> sortedActivationList = GetActivation(input);
 
             //Select node with highest activation and do vigilance tests
-            for (Map.Entry<Double[], Double> node : sortedActivationMap.entrySet())
+            for (Node node : sortedActivationList)
             {
                 //Compute vigilance
-                double vigilance = sum(fuzzyMin(input.getKey(), node.getKey()))/sum(input.getKey());
+                double vigilance = FuzzyMath.sum(FuzzyMath.fuzzyMin(input.getKey(), node.GetPattern()))/FuzzyMath.sum(input.getKey());
 
                 //Committed Node
-                if (nodes.containsKey(node.getKey()))
+                if (nodes.contains(node))
                 {
                     //Vigilance test
                     if (vigilance >= vigilanceParam)
-                        result.put(input.getKey(), nodes.get(node.getKey()));
+                    {
+                        //Node selected, increment frequency
+                        node.IncrementFrequencyCount();
+
+                        //Selected node label matches input, increment accuracy
+                        if (input.getValue() == node.GetLabel())
+                            node.IncrementAccuracyCount();
+
+                        break;
+                    }
                 }
-                //Uncommitted Node
-                else
-                {
-                    //Unknown
-                    result.put(input.getKey(), -1);
-                    break;
-                }
+                //Uncommitted Node, do nothing
 
                 //Disqualify node
-                node.setValue(-1.0);
+                node.SetActivation(-1.0);
             }
-
-            //Increment number of correct response counter if validation matches computed
-            if (result.get(input).equals(validationSet.get(input)))
-                correctCount += 1;
         }
 
-        return correctCount/validationSet.size();
+        //Find max accuracy and frequency for each label
+        Map<Integer, Integer> maxAccuracyMap = new LinkedHashMap<Integer, Integer>();
+        Map<Integer, Integer> maxFrequencyMap = new LinkedHashMap<Integer, Integer>();
+        for (Node node : nodes)
+        {
+            Integer maxAccuracy = 0;
+            if (maxAccuracyMap.containsKey(node.GetLabel()))
+                maxAccuracy = maxAccuracyMap.get(node.GetLabel());
+            maxAccuracyMap.put(node.GetLabel(), Math.max(maxAccuracy, node.GetAccuracyCount()));
+
+            Integer maxFrequency = 0;
+            if (maxFrequencyMap.containsKey(node.GetLabel()))
+                maxFrequency = maxFrequencyMap.get(node.GetLabel());
+            maxFrequencyMap.put(node.GetLabel(), Math.max(maxFrequency, node.GetFrequencyCount()));
+        }
+
+        //Compute metrics
+        for (Node node : nodes)
+        {
+            correctCount += node.GetAccuracyCount();
+
+            int maxAccuracyCount = maxAccuracyMap.get(node.GetLabel());
+            int maxFrequencyCount = maxFrequencyMap.get(node.GetLabel());
+
+            if (maxAccuracyCount > 0)
+                node.SetAccuracy((double)node.GetAccuracyCount() / (double)maxAccuracyCount);
+            if (maxFrequencyCount > 0)
+                node.SetFrequency((double)node.GetFrequencyCount() / (double)maxFrequencyCount);
+        }
+
+        if ((double)correctCount > (double)validationSet.size())
+            correctCount = 0;
+
+        return 1 - (double)correctCount/(double)validationSet.size();
     }
 
     /**
@@ -269,5 +248,20 @@ public class FuzzyARTMAP
     public int Size()
     {
         return nodes.size();
+    }
+
+    public ArrayList<Node> GetNodes()
+    {
+        return nodes;
+    }
+
+    public double GetBaselineVigilanceParam()
+    {
+        return baselineVigilenceParam;
+    }
+
+    public double GetChoiceParam()
+    {
+        return choiceParam;
     }
 }

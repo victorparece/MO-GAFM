@@ -13,13 +13,15 @@ public class Chromosome implements Comparable<Chromosome>
     private int strengthValue;
     private double fitness;
 
+    private static double CHOICE_PARAM = 0.01;
+
     /**
      * Constructor
      */
     public Chromosome(Map<Double[], Integer> input, Random random)
     {
         //Random baseline vigilance between 0.1 and 0.95
-        double baselineVigilance = 0.1 + (0.95 - 0.1) * random.nextDouble();
+        double baselineVigilance = GetRandomBaselineVigilanceParameter(random);
 
         //Randomly ordered input
         Map<Double[], Integer> shuffledMap = new LinkedHashMap<Double[], Integer>();
@@ -28,7 +30,24 @@ public class Chromosome implements Comparable<Chromosome>
         for (Double[] key : shuffledList)
             shuffledMap.put(key, input.get(key));
 
-        fartmap = new FuzzyARTMAP(input, 0.01, baselineVigilance);
+        fartmap = new FuzzyARTMAP(input, CHOICE_PARAM, baselineVigilance);
+    }
+
+    public Chromosome(Chromosome chromo)
+    {
+        fartmap = new FuzzyARTMAP(chromo.GetFuzzyARTMAP());
+        errorRate = chromo.GetErrorRate();
+        complexity = chromo.GetComplexity();
+        strengthValue = chromo.GetStrengthValue();
+        fitness = chromo.GetFitness();
+    }
+
+    public Chromosome(ArrayList<Node> nodes, Random random)
+    {
+        //Random baseline vigilance between 0.1 and 0.95
+        double baselineVigilance = GetRandomBaselineVigilanceParameter(random);
+
+        fartmap = new FuzzyARTMAP(nodes, CHOICE_PARAM, baselineVigilance);
     }
 
     /**
@@ -63,7 +82,12 @@ public class Chromosome implements Comparable<Chromosome>
 
     public boolean Dominates(Chromosome b)
     {
-        return GetComplexity() < b.GetComplexity() && GetErrorRate() < b.GetErrorRate();
+        if (GetComplexity() == b.GetComplexity() && GetErrorRate() < b.GetErrorRate())
+            return GetErrorRate() < b.GetErrorRate();
+        else if (GetComplexity() < b.GetComplexity() && GetErrorRate() == b.GetErrorRate())
+            return GetComplexity() < b.GetComplexity();
+
+        return (GetComplexity() < b.GetComplexity() && GetErrorRate() < b.GetErrorRate());
     }
 
     /**
@@ -95,15 +119,94 @@ public class Chromosome implements Comparable<Chromosome>
             chromoDistances.add(Point.distance(errorRate, complexity, chromo.GetErrorRate(), chromo.GetComplexity()));
         }
 
-        //Sort //TODO: Make sure this is ascending order
+        //Sort
         Collections.sort(chromoDistances);
 
-        fitness = rawFitness + 1/(chromoDistances.get(k) + 2);
+        fitness = rawFitness + 1.0/(chromoDistances.get(k) + 2.0);
     }
 
     @Override
     public int compareTo(Chromosome b)
     {
         return new Double(fitness).compareTo(b.GetFitness());
+    }
+
+    public FuzzyARTMAP GetFuzzyARTMAP()
+    {
+        return fartmap;
+    }
+
+    public void DoPrune(Random random)
+    {
+        ArrayList<Node> nodes = fartmap.GetNodes();
+        for (int i = nodes.size()-1; i >= 0; i--)
+        {
+            Node node = nodes.get(i);
+            if (random.nextDouble() < 1.0 - node.GetConfidenceFactor())
+                nodes.remove(node);
+        }
+    }
+
+    public void DoMutation(Random random)
+    {
+        for (Node node : fartmap.GetNodes())
+        {
+            double rand = random.nextDouble();
+            Double[] d = node.GetPattern();
+            int start, end;
+
+            if (rand < 0.5)
+            {
+                start = 0;
+                end = node.GetPattern().length/2;
+            }
+            else
+            {
+                start = node.GetPattern().length/2;
+                end = node.GetPattern().length;
+            }
+
+            for (int i = start; i < end; i++)
+            {
+                d[i] += random.nextGaussian() * 0.05*(1-node.GetConfidenceFactor());
+                if (d[i] < 0.0)
+                    d[i] = 0.0;
+                else if (d[i] > 1.0)
+                    d[i] = 1.0;
+            }
+        }
+    }
+
+    public static Chromosome DoCrossover(Random random, Chromosome chromoA, Chromosome chromoB)
+    {
+        ArrayList<Node> chromoANodes = chromoA.GetFuzzyARTMAP().GetNodes();
+        ArrayList<Node> chromoBNodes = chromoB.GetFuzzyARTMAP().GetNodes();
+
+        int crossoverPointA = 0;
+        if (chromoANodes.size() > 0)
+            crossoverPointA = random.nextInt(chromoANodes.size());
+        int crossoverPointB = 0;
+        if (chromoBNodes.size() > 0)
+            crossoverPointB = random.nextInt(chromoBNodes.size());
+
+        ArrayList<Node> newChromoNodes = new ArrayList<Node>();
+
+        if (chromoANodes.size() == 0)
+            chromoANodes.size();
+
+        //Copy from start of chromo A to the crossover point
+        for (int i = 0; i <= crossoverPointA; i++)
+            newChromoNodes.add(chromoANodes.get(i));
+
+        //Copy from crossover point to end of chromo B
+        for (int i = crossoverPointB; i < chromoBNodes.size(); i++)
+            newChromoNodes.add(chromoBNodes.get(i));
+
+        return new Chromosome(newChromoNodes, random);
+    }
+
+    public double GetRandomBaselineVigilanceParameter(Random random)
+    {
+        return 0.1 + (0.95 - 0.1) * random.nextDouble();
     }
 }
