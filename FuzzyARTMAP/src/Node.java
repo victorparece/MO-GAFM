@@ -130,5 +130,7 @@ public class Node implements Comparable<Node>
         activation = 0;
         accuracyCount = 0;
         frequencyCount = 0;
+        accuracy = 0;
+        frequency = 0;
     }
 }
