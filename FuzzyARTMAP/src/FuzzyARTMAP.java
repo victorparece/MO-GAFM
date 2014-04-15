@@ -229,14 +229,18 @@ public class FuzzyARTMAP
             int maxAccuracyCount = maxAccuracyMap.get(node.GetLabel());
             int maxFrequencyCount = maxFrequencyMap.get(node.GetLabel());
 
+            //Correctness check
+            assert node.GetAccuracyCount() <= maxAccuracyCount;
+            assert node.GetFrequencyCount() <= maxFrequencyCount;
+
             if (maxAccuracyCount > 0)
                 node.SetAccuracy((double)node.GetAccuracyCount() / (double)maxAccuracyCount);
             if (maxFrequencyCount > 0)
                 node.SetFrequency((double)node.GetFrequencyCount() / (double)maxFrequencyCount);
         }
 
-        if ((double)correctCount > (double)validationSet.size())
-            correctCount = 0;
+        //Correctness check
+        assert correctCount <= validationSet.size();
 
         return 1 - (double)correctCount/(double)validationSet.size();
     }

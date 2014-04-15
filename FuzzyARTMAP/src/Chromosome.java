@@ -13,12 +13,15 @@ public class Chromosome implements Comparable<Chromosome>
     private int strengthValue;
     private double fitness;
 
-    private static double CHOICE_PARAM = 0.01;
+    public enum CrossoverType
+    {
+        Simple, CrossoverLabels
+    }
 
     /**
      * Constructor
      */
-    public Chromosome(Map<Double[], Integer> input, Random random)
+    public Chromosome(Map<Double[], Integer> input, Random random, double choiceParam)
     {
         //Random baseline vigilance between 0.1 and 0.95
         double baselineVigilance = GetRandomBaselineVigilanceParameter(random);
@@ -30,7 +33,7 @@ public class Chromosome implements Comparable<Chromosome>
         for (Double[] key : shuffledList)
             shuffledMap.put(key, input.get(key));
 
-        fartmap = new FuzzyARTMAP(input, CHOICE_PARAM, baselineVigilance);
+        fartmap = new FuzzyARTMAP(input, choiceParam, baselineVigilance);
     }
 
     public Chromosome(Chromosome chromo)
@@ -42,12 +45,17 @@ public class Chromosome implements Comparable<Chromosome>
         fitness = chromo.GetFitness();
     }
 
-    public Chromosome(ArrayList<Node> nodes, Random random)
+    public Chromosome(ArrayList<Node> nodes, Random random, double choiceParam)
     {
         //Random baseline vigilance between 0.1 and 0.95
         double baselineVigilance = GetRandomBaselineVigilanceParameter(random);
 
-        fartmap = new FuzzyARTMAP(nodes, CHOICE_PARAM, baselineVigilance);
+        fartmap = new FuzzyARTMAP(nodes, choiceParam, baselineVigilance);
+    }
+
+    public Chromosome(ArrayList<Node> nodes, double baselineVigilance, double choiceParam)
+    {
+        fartmap = new FuzzyARTMAP(nodes, choiceParam, baselineVigilance);
     }
 
     /**
@@ -83,11 +91,13 @@ public class Chromosome implements Comparable<Chromosome>
     public boolean Dominates(Chromosome b)
     {
         if (GetComplexity() == b.GetComplexity() && GetErrorRate() < b.GetErrorRate())
-            return GetErrorRate() < b.GetErrorRate();
+            return true;
         else if (GetComplexity() < b.GetComplexity() && GetErrorRate() == b.GetErrorRate())
-            return GetComplexity() < b.GetComplexity();
+            return true;
+        else if ((GetComplexity() < b.GetComplexity() && GetErrorRate() < b.GetErrorRate()))
+            return true;
 
-        return (GetComplexity() < b.GetComplexity() && GetErrorRate() < b.GetErrorRate());
+        return false;
     }
 
     /**
@@ -139,23 +149,46 @@ public class Chromosome implements Comparable<Chromosome>
     public void DoPrune(Random random)
     {
         ArrayList<Node> nodes = fartmap.GetNodes();
-        for (int i = nodes.size()-1; i >= 0; i--)
-        {
-            Node node = nodes.get(i);
+        ArrayList<Node> deleteList = new ArrayList<Node>();
+
+        //Mark nodes for deletion
+        for (Node node : nodes)
             if (random.nextDouble() < 1.0 - node.GetConfidenceFactor())
-                nodes.remove(node);
+                deleteList.add(node);
+
+        //Get all nodes that represent each label
+        Map<Integer, ArrayList<Node>> nodeLabelMap = GetNodesForLabel(nodes);
+
+        Collections.sort(deleteList, new Comparator<Node>() {
+            @Override
+            public int compare(Node a, Node b) {
+                return Double.compare(a.GetConfidenceFactor(), b.GetConfidenceFactor());
+            }
+        } );
+
+        //Delete nodes marked for deletion
+        for (Node markedNode : deleteList)
+        {
+            for (int i = nodes.size()-1; i >= 0; i--)
+            {
+                //Delete marked node if there exists a different node with the same label
+                if (markedNode != nodes.get(i) && markedNode.GetLabel() == nodes.get(i).GetLabel())
+                {
+                    nodes.remove(markedNode);
+                    break;
+                }
+            }
         }
     }
 
-    public void DoMutation(Random random)
+    public void DoMutation(Random random, double mutationParam)
     {
         for (Node node : fartmap.GetNodes())
         {
-            double rand = random.nextDouble();
             Double[] d = node.GetPattern();
             int start, end;
 
-            if (rand < 0.5)
+            if (random.nextDouble() < 0.5)
             {
                 start = 0;
                 end = node.GetPattern().length/2;
@@ -166,9 +199,10 @@ public class Chromosome implements Comparable<Chromosome>
                 end = node.GetPattern().length;
             }
 
+            double z = random.nextGaussian() * mutationParam *(1-node.GetConfidenceFactor());
             for (int i = start; i < end; i++)
             {
-                d[i] += random.nextGaussian() * 0.05*(1-node.GetConfidenceFactor());
+                d[i] += z;
                 if (d[i] < 0.0)
                     d[i] = 0.0;
                 else if (d[i] > 1.0)
@@ -177,35 +211,85 @@ public class Chromosome implements Comparable<Chromosome>
         }
     }
 
-    public static Chromosome DoCrossover(Random random, Chromosome chromoA, Chromosome chromoB)
+    public static Chromosome DoCrossover(Random random, CrossoverType type, Chromosome chromoA, Chromosome chromoB, double choiceParam)
     {
-        ArrayList<Node> chromoANodes = chromoA.GetFuzzyARTMAP().GetNodes();
-        ArrayList<Node> chromoBNodes = chromoB.GetFuzzyARTMAP().GetNodes();
-
-        int crossoverPointA = 0;
-        if (chromoANodes.size() > 0)
-            crossoverPointA = random.nextInt(chromoANodes.size());
-        int crossoverPointB = 0;
-        if (chromoBNodes.size() > 0)
-            crossoverPointB = random.nextInt(chromoBNodes.size());
-
         ArrayList<Node> newChromoNodes = new ArrayList<Node>();
 
-        if (chromoANodes.size() == 0)
-            chromoANodes.size();
+        switch (type)
+        {
+            case CrossoverLabels:
+                //Copy nodes into map based on label, crossover is done separately for each label
+                Map<Integer, ArrayList<Node>> chromoALabelMap = GetNodesForLabel(chromoA.GetFuzzyARTMAP().GetNodes());
+                Map<Integer, ArrayList<Node>> chromoBLabelMap = GetNodesForLabel(chromoB.GetFuzzyARTMAP().GetNodes());
 
-        //Copy from start of chromo A to the crossover point
-        for (int i = 0; i <= crossoverPointA; i++)
-            newChromoNodes.add(chromoANodes.get(i));
+                //Correctness check
+                assert chromoALabelMap.size() == chromoBLabelMap.size();
 
-        //Copy from crossover point to end of chromo B
-        for (int i = crossoverPointB; i < chromoBNodes.size(); i++)
-            newChromoNodes.add(chromoBNodes.get(i));
+                //Loop for labels
+                for (Map.Entry<Integer, ArrayList<Node>> entry : chromoALabelMap.entrySet())
+                {
+                    ArrayList<Node> chromoANodesForLabel = entry.getValue();
+                    ArrayList<Node> chromoBNodesForLabel = chromoBLabelMap.get(entry.getKey());
 
-        return new Chromosome(newChromoNodes, random);
+                    newChromoNodes.addAll(CombineNodes(random, chromoANodesForLabel, chromoBNodesForLabel));
+
+                    assert newChromoNodes.size() > 0;
+                }
+                break;
+            case Simple:
+                newChromoNodes.addAll(CombineNodes(random, chromoA.GetFuzzyARTMAP().GetNodes(), chromoB.GetFuzzyARTMAP().GetNodes()));
+                break;
+        }
+
+        //Use baseline vigilance from most fit parent
+        double baselineVigilance = GetRandomBaselineVigilanceParameter(random);
+//        if (chromoA.GetFitness() > chromoB.GetFitness())
+//            baselineVigilance = chromoA.GetFuzzyARTMAP().GetBaselineVigilanceParam();
+//        else
+//            baselineVigilance = chromoB.GetFuzzyARTMAP().GetBaselineVigilanceParam();
+
+        //Create new chromosome from selected nodes and reset nodes
+        Chromosome newChromo = new Chromosome(newChromoNodes, baselineVigilance, choiceParam);
+        for (Node node : newChromo.GetFuzzyARTMAP().GetNodes())
+            node.Reset();
+
+        return newChromo;
     }
 
-    public double GetRandomBaselineVigilanceParameter(Random random)
+    private static ArrayList<Node> CombineNodes(Random random, ArrayList<Node> nodesA, ArrayList<Node> nodesB)
+    {
+        ArrayList<Node> newNodes = new ArrayList<Node>();
+
+        int crossoverPointA = random.nextInt(nodesA.size());
+        int crossoverPointB = random.nextInt(nodesB.size());
+
+        //Copy from start of nodes for A to the crossover point
+        for (int i = 0; i < crossoverPointA; i++)
+            newNodes.add(nodesA.get(i));
+
+        //Copy from crossover point to end of nodes for B
+        for (int i = crossoverPointB; i < nodesB.size(); i++)
+            newNodes.add(nodesB.get(i));
+
+        return newNodes;
+    }
+
+    private static Map<Integer, ArrayList<Node>> GetNodesForLabel(ArrayList<Node> nodes)
+    {
+        Map<Integer, ArrayList<Node>> labelMap = new LinkedHashMap<Integer, ArrayList<Node>>();
+
+        for (Node node : nodes)
+        {
+            ArrayList<Node> currentNodes = new ArrayList<Node>();
+            if (labelMap.containsKey(node.GetLabel()))
+                currentNodes = labelMap.get(node.GetLabel());
+            currentNodes.add(node);
+            labelMap.put(node.GetLabel(), currentNodes);
+        }
+        return labelMap;
+    }
+
+    public static double GetRandomBaselineVigilanceParameter(Random random)
     {
         return 0.1 + (0.95 - 0.1) * random.nextDouble();
     }
