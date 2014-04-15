@@ -1,7 +1,6 @@
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -39,7 +38,6 @@ public class DataReader
         try
         {
             BufferedReader br = new BufferedReader(new FileReader(prefix + DELIM + suffixString));
-            StringBuilder sb = new StringBuilder();
 
             //Read file into arraylist
             String line = br.readLine();
@@ -47,9 +45,11 @@ public class DataReader
             {
                 String[] parts = line.split("\\s*,\\s*");
 
-                Double[] pattern = new Double[2];
+                Double[] pattern = new Double[4];
                 pattern[0] = new Double(parts[0]);
                 pattern[1] = new Double(parts[1]);
+                pattern[2] = new Double(1.0 - pattern[0]);
+                pattern[3] = new Double(1.0 - pattern[1]);
 
                 Integer label = new Integer(parts[2]);
 
